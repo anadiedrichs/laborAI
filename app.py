@@ -53,8 +53,9 @@ faiss_index = FAISS.from_texts(texts=documents, embedding=embedding_model)
 
 
 # Configurar el modelo LLM
-llm_model_name = "meta-llama/Llama-2-13b-hf" #"nvidia/Llama3-ChatQA-1.5-8B"
-llm_pipeline = pipeline("question-answering", model=llm_model_name, token=st.secrets["HF_TOKEN"])
+#"meta-llama/Llama-2-13b-hf"
+llm_model_name = "timpal0l/mdeberta-v3-base-squad2" # "meta-llama/Llama-2-13b-hf" #"nvidia/Llama3-ChatQA-1.5-8B"
+llm_pipeline = pipeline("question-answering", model=llm_model_name, token= "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" ) # st.secrets["HF_TOKEN"])
 
 # Crear la aplicación Streamlit
 st.title("Aplicación RAG con LLM en Español")
@@ -63,8 +64,10 @@ query = st.text_input("Ingrese su consulta:")
 
 if query:
     relevant_docs = faiss_index.similarity_search(query, k=3)
-    context = ' '.join([doc['text'] for doc in relevant_docs])
-    
+    context = ' '
+    for doc in relevant_docs:
+       context = context + doc.page_content
+
     result = llm_pipeline(question=query, context=context)
     
     st.write("Respuesta del modelo:")
