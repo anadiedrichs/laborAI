@@ -1,10 +1,27 @@
-import requests
-from bs4 import BeautifulSoup
-from sentence_transformers import SentenceTransformer
+
+#from bs4 import BeautifulSoup
+#from sentence_transformers import SentenceTransformer
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import FAISS
 from transformers import pipeline
 import streamlit as st
+from huggingface_hub.hf_api import HfFolder
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.document_transformers import BeautifulSoupTransformer
+from langchain_community.document_loaders import AsyncHtmlLoader
+from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+def split_documents(documents: list[Document]):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=300,
+        chunk_overlap=80,
+        length_function=len,
+        is_separator_regex=False,
+    )
+    return text_splitter.split_documents(documents)
 
 # Descargar y procesar textos
 links = [
@@ -14,16 +31,29 @@ links = [
     "https://www.argentina.gob.ar/normativa/nacional/ley-11544-63368/actualizacion"
 ]
 
-def download_text(url):
-    response = requests.get(url)
-    soup = BeautifulSoup(response.content, 'html.parser')
-    paragraphs = soup.find_all('p')
-    text = ' '.join([para.get_text() for para in paragraphs])
-    return text
+titles = [
+"REGIMEN DE CONTRATO DE TRABAJO  LEY N° 20.744",
+"EMPLEO Ley Nº 24.013",
+"RIESGOS DEL TRABAJO Ley N° 24.557",
+"JORNADA DE TRABAJOLey 11.544"
+]
 
-from langchain.embeddings import HuggingFaceEmbeddings
 
-documents = [download_text(url) for url in links]
+loader = AsyncHtmlLoader(links)
+docs = loader.load()
+
+# Transform
+bs_transformer = BeautifulSoupTransformer()
+docs_transformed = bs_transformer.transform_documents(docs, tags_to_extract=["article"])
+
+documents = []
+for i in range(len(docs_transformed)):
+  metadata = {"title": titles[i], "source": links[i]}
+  d = Document(metadata=metadata, page_content = docs_transformed[i].page_content)
+  documents.append(d)
+
+chunks = split_documents(documents)
+
 
 # Crear embeddings y base de datos vectorial
 
@@ -34,16 +64,16 @@ embedding_model = HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-lar
 #document_embeddings = embedding_model.encode(documents)
 
 # Crear FAISS index
-faiss_index = FAISS.from_texts(texts=documents, embedding=embedding_model)
+faiss_index = FAISS.from_documents(documents=chunks, embedding=embedding_model)
 
 
 # Configurar el modelo LLM
-from huggingface_hub.hf_api import HfFolder
 
-HfFolder.save_token('') #INTRODUCIR TOKEN DE HUGGINGFACE. DEBE ESTAR APROBADA LA SOLICITUD DE USO DE MODELO LLAMA-3
+# Visit https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct to ask for access.
 
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+#INTRODUCIR TOKEN DE HUGGINGFACE. 
+# DEBE ESTAR APROBADA LA SOLICITUD DE USO DE MODELO LLAMA-3
+HfFolder.save_token('YOUR_HF_TOKEN') 
 
 model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
 
