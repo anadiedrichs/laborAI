@@ -1,23 +1,29 @@
 # laborAI
 
-### Initial setup 
+## Initial setup 
 
-1. Create a Python virtual environment
+1. Clone this repository
 
 ```
 cd laborAI
 python -m venv .venv
 ```
 
-2. Install the requirements
+2. Create a Python virtual environment
+
+```
+cd laborAI
+python -m venv .venv
+```
+
+3. Install the requirements
 
 ```
 $ pip install -r requirements.txt
 ```
    
-3. In your terminal, activate your environment with one of the following commands, depending on your operating system.
+4. In your terminal, activate your environment with one of the following commands, depending on your operating system.
 
-   
 ```
 # Windows command prompt
 .venv\Scripts\activate.bat
@@ -29,15 +35,38 @@ $ pip install -r requirements.txt
 source .venv/bin/activate
 
 ```
-### Before you run: pre-requirements
+## Ollama
+
+Install Ollama
+
+```
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+Run ollama server 
+
+```
+ollama serve &
+```
+
+Download model
+
+```
+ollama pull llama3-chaqa
+```
+
+## Before you run: pre-requirements
 
 
-* Visit https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct to ask for access.
-* Visit huggingface.co and get your TOKEN.
-* After you create the TOKEN, give access to read the model meta-llama/Meta-Llama-3-8B-Instruct
+* Ollama must be running. Remember to open a terminal and start ollama
+
+```
+ollama serve &
+```
 
 
 ### How to run it on your own machine
+
 
 * Run the app
 

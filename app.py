@@ -1,27 +1,30 @@
-
-#from bs4 import BeautifulSoup
-#from sentence_transformers import SentenceTransformer
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
-from transformers import pipeline
 import streamlit as st
-from huggingface_hub.hf_api import HfFolder
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from langchain.embeddings import HuggingFaceEmbeddings
 from langchain_community.document_transformers import BeautifulSoupTransformer
 from langchain_community.document_loaders import AsyncHtmlLoader
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_community.embeddings.sentence_transformer import SentenceTransformerEmbeddings
+from langchain.prompts import ChatPromptTemplate
+from langchain_community.llms.ollama import Ollama
+from langchain.vectorstores import Chroma
 
-def split_documents(documents: list[Document]):
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=300,
-        chunk_overlap=80,
-        length_function=len,
-        is_separator_regex=False,
-    )
-    return text_splitter.split_documents(documents)
+from langchain_core.runnables import (
+    RunnableParallel,
+    RunnablePassthrough
+)
+from langchain.schema.output_parser import StrOutputParser
+import os
+
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+MODEL="llama3-chaqa"
+
+PROMPT_TEMPLATE = """
+Responda en español a la siguiente pregunta:
+
+{question}
+
+, basándose en el siguiente contexto: {context}
+"""
 
 # Descargar y procesar textos
 links = [
@@ -39,66 +42,133 @@ titles = [
 ]
 
 
-loader = AsyncHtmlLoader(links)
-docs = loader.load()
+def split_documents(documents: list[Document]):
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=300,
+        chunk_overlap=80,
+        length_function=len,
+        is_separator_regex=False,
+    )
+    return text_splitter.split_documents(documents)
 
-# Transform
-bs_transformer = BeautifulSoupTransformer()
-docs_transformed = bs_transformer.transform_documents(docs, tags_to_extract=["article"])
+def download_documents():
+   
+    loader = AsyncHtmlLoader(links)
+    docs = loader.load()
+    return docs
 
-documents = []
-for i in range(len(docs_transformed)):
-  metadata = {"title": titles[i], "source": links[i]}
-  d = Document(metadata=metadata, page_content = docs_transformed[i].page_content)
-  documents.append(d)
+# Regresa arreglo de Document, los textos en pedacitos
+def get_dataset():
 
-chunks = split_documents(documents)
+    docs = download_documents()
+    print("Texto legal descargado.")
+    bs_transformer = BeautifulSoupTransformer()
+    docs_transformed = bs_transformer.transform_documents(docs, tags_to_extract=["article"])
 
+    documents = []
+    for i in range(len(docs_transformed)):
+        metadata = {"title": titles[i], "source": links[i]}
+        d = Document(metadata=metadata, page_content = docs_transformed[i].page_content)
+        documents.append(d)
 
-# Crear embeddings y base de datos vectorial
-
-embedding_model = HuggingFaceEmbeddings(model_name="intfloat/multilingual-e5-large")
-
-
-# Convertir documentos a embeddings
-#document_embeddings = embedding_model.encode(documents)
-
-# Crear FAISS index
-faiss_index = FAISS.from_documents(documents=chunks, embedding=embedding_model)
+    chunks = split_documents(documents)
+    print("Documentos creados.")
+    return chunks
 
 
-# Configurar el modelo LLM
+# Base de datos 
+def create_or_load_database():
 
-# Visit https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct to ask for access.
+    collection_name = "laborAI_db"
+    db_directory = f"./{collection_name}"
 
-#INTRODUCIR TOKEN DE HUGGINGFACE. 
-# DEBE ESTAR APROBADA LA SOLICITUD DE USO DE MODELO LLAMA-3
-HfFolder.save_token('YOUR_HF_TOKEN') 
 
-model_name = "meta-llama/Meta-Llama-3-8B-Instruct"
+    # create the open-source embedding function
+    embedding = SentenceTransformerEmbeddings(model_name=EMBEDDING_MODEL)
 
-bnb_config = BitsAndBytesConfig(
-    load_in_4bit=True, bnb_4bit_use_double_quant=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16
+    # Verificar si el directorio de la base de datos existe
+    if not os.path.exists(db_directory):
+
+        
+        print("Inicio de proceso de creación de base de datos.")
+
+        os.makedirs(db_directory)
+        
+        # descarga y armado del dataset 
+        chunks = get_dataset()
+
+        database = Chroma.from_documents(chunks,
+                                        embedding = embedding, 
+                                        collection_name=collection_name,
+                                        persist_directory=db_directory)
+        # save to disk
+
+        print("Base de datos CREADA y cargada exitosamente.")
+        
+    else:
+        # cargar la base de datos a memoria or load the data base
+        database = Chroma(collection_name=collection_name, 
+                          embedding_function=embedding, 
+                          persist_directory=db_directory)
+        
+        print("Base de datos cargada exitosamente.")
+
+
+   
+    return database
+
+def get_rag_chain(retriever):
+
+    # Configurar el modelo LLM
+    llm = Ollama(model = MODEL)
+    
+    retrieval = RunnableParallel(
+        {"context": retriever,  "question": RunnablePassthrough()}
+    )
+    prompt = ChatPromptTemplate.from_template(PROMPT_TEMPLATE)
+
+    chain = retrieval | prompt | llm | StrOutputParser()
+
+    return chain
+
+
+
+
+
+database = create_or_load_database()
+
+print("Hay ", database._collection.count(), " elementos en la base de datos ")
+
+
+# query it
+#query = "Despidos"
+#docs = database.similarity_search(query)
+#print("Test de base de datos.")
+# print results
+#print(docs[0].page_content)
+
+# Fetch more documents for the MMR algorithm to consider
+# But only return the top 5
+retriever =  database.as_retriever(
+    search_type="mmr",
+    search_kwargs={'k': 5, 'fetch_k': 50}
 )
 
-model = AutoModelForCausalLM.from_pretrained(model_name, quantization_config=bnb_config)
 
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-llm_pipeline = pipeline("text-generation", model=model, tokenizer=tokenizer)
+chain = get_rag_chain(retriever)
 
 # Crear la aplicación Streamlit
-st.title("Aplicación RAG con LLM en Español")
+st.title("LaborAI: aplicación RAG + LLM en Español para consultas de derecho laboral")
 
-query = st.text_input("Ingrese su consulta:")
+question = st.text_input("Ingrese su pregunta:")
 
-if query:
-    relevant_docs = faiss_index.similarity_search(query, k=3)
-    context = ' '
-    for doc in relevant_docs:
-       context = context + doc.page_content
+if question:
 
-    result = llm_pipeline(question=query, context=context)
-    
-    st.write("Respuesta del modelo:")
-    st.write(result['answer'])
+    result = chain.invoke(question)
+    st.write("Respuesta:")
+    st.write(result)
+    contexts = []
+    contexts.append([docs.page_content for docs in retriever.get_relevant_documents(question)])
+    st.write("Contexto:")
+    st.write(contexts)
+
