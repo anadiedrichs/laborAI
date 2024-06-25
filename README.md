@@ -33,8 +33,8 @@ source .venv/bin/activate
 
 
 * Visit https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct to ask for access.
-
-* Visit huggingface.co and get your token
+* Visit huggingface.co and get your TOKEN.
+* After you create the TOKEN, give access to read the model meta-llama/Meta-Llama-3-8B-Instruct
 
 
 ### How to run it on your own machine
