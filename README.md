@@ -29,6 +29,13 @@ $ pip install -r requirements.txt
 source .venv/bin/activate
 
 ```
+### Before you run: pre-requirements
+
+
+* Visit https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct to ask for access.
+
+* Visit huggingface.co and get your token
+
 
 ### How to run it on your own machine
 
