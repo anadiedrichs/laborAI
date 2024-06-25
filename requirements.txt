@@ -1,8 +1,10 @@
 requests
 beautifulsoup4
+transformers
 sentence-transformers
+langchain-community
+bitsandbytes
 faiss-cpu
 langchain
 streamlit
-transformers
-langchain-community
+langchain-huggingface
